@@ -1,9 +1,7 @@
 package com.example.pokedex
 
-
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
@@ -14,14 +12,18 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
-import kotlinx.coroutines.withTimeoutOrNull
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
+import androidx.compose.foundation.background
+import androidx.compose.foundation.Canvas
+import androidx.compose.ui.graphics.drawscope.translate
+import kotlin.math.roundToInt
 
 
 // Screen positions as fractions of image dimensions (1812 x 2176)
@@ -104,6 +106,7 @@ private const val CIRC_LEFT_CX  = 578f / 1812f
 private const val CIRC_RIGHT_CX = 633f / 1812f
 private const val CIRC_CY       = 1108f / 2176f
 private const val CIRC_R        = 16f / 1812f
+
 private val T9_LABELS = listOf(
     listOf("1", "-★✦"),
     listOf("2", "ABC"),
@@ -137,10 +140,8 @@ fun PokedexLayout(
     onDpadRight: () -> Unit = {},
     onCircleLeft: () -> Unit = {},
     onCircleRight: () -> Unit = {}
-
 ) {
     var currentPage by remember { mutableStateOf(TypeEffectivenessPage.WEAK) }
-
 
     @Suppress("UnusedBoxWithConstraintsScope")
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
@@ -199,7 +200,7 @@ fun PokedexLayout(
                 .clip(RoundedCornerShape(4.dp))
         ) { smallRightContent() }
 
-        // < button
+        // < button (type effectiveness page cycle)
         Box(
             modifier = Modifier
                 .absoluteOffset(x = imgW * BTN_LEFT_L, y = imgH * BTN_LEFT_T)
@@ -214,7 +215,7 @@ fun PokedexLayout(
                 }
         )
 
-        // > button
+        // > button (type effectiveness page cycle)
         Box(
             modifier = Modifier
                 .absoluteOffset(x = imgW * BTN_RIGHT_L, y = imgH * BTN_RIGHT_T)
@@ -254,7 +255,6 @@ fun PokedexLayout(
                 .height(imgH * (DPAD_UP_B - DPAD_UP_T))
                 .clickable { onDpadUp() }
         )
-
         Box(
             modifier = Modifier
                 .absoluteOffset(x = imgW * DPAD_DOWN_L, y = imgH * DPAD_DOWN_T)
@@ -262,7 +262,6 @@ fun PokedexLayout(
                 .height(imgH * (DPAD_DOWN_B - DPAD_DOWN_T))
                 .clickable { onDpadDown() }
         )
-
         Box(
             modifier = Modifier
                 .absoluteOffset(x = imgW * DPAD_LEFT_L, y = imgH * DPAD_LEFT_T)
@@ -270,7 +269,6 @@ fun PokedexLayout(
                 .height(imgH * (DPAD_LEFT_B - DPAD_LEFT_T))
                 .clickable { onDpadLeft() }
         )
-
         Box(
             modifier = Modifier
                 .absoluteOffset(x = imgW * DPAD_RIGHT_L, y = imgH * DPAD_RIGHT_T)
@@ -357,6 +355,213 @@ fun PokedexLayout(
                         )
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+fun PokedexLayoutSinglePanel(
+    showRightPanel: Boolean,
+    onTogglePanel: () -> Unit,
+    onNavUp: () -> Unit = {},
+    onNavDown: () -> Unit = {},
+    onCircleRight: () -> Unit = {},
+    onCircleLeft: () -> Unit = {},
+    onT9Key: (Int) -> Unit = {},
+    onT9Button10Press: () -> Unit = {},
+    onT9Button10Release: () -> Unit = {},
+    leftContent: @Composable () -> Unit,
+    rightContent: @Composable () -> Unit
+) {
+
+    @Suppress("UnusedBoxWithConstraintsScope")
+    BoxWithConstraints(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black)
+    ) {
+        val screenW = maxWidth
+        val density = LocalDensity.current
+
+        // Each half of the image equals exactly screenW — no bleed past the edge.
+        val imgW = screenW * 2f
+        val imgH = imgW * (2176f / 1812f)
+
+        // Convert to pixels for Canvas drawing.
+        val screenWPx = with(density) { screenW.toPx() }
+
+        val imgWPx = screenWPx * 2f
+        val imgHPx = imgWPx * (2176f / 1812f)
+
+        // Draw the background image directly onto a Canvas.
+        // Canvas is inherently clipped to its own bounds (= fillMaxSize = screenW wide),
+        // so no clip modifier is needed. translate() shifts the draw origin so exactly
+        // the left or right half of the full-width image is visible. The layout system
+        // is completely bypassed for the image — no constraint clamping, no alignment
+        // quirks, no render culling.
+        val painter = painterResource(id = R.drawable.open_dex)
+        val xShiftPx = if (showRightPanel) -screenWPx else 0f
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            translate(left = xShiftPx) {
+                with(painter) {
+                    draw(androidx.compose.ui.geometry.Size(imgWPx, imgHPx))
+                }
+            }
+        }
+
+        // ── Screen content ─────────────────────────────────────────────────────────
+        // Content boxes start at on-screen x positions in both states, so absoluteOffset
+        // is safe (no layout-culling risk). x positions mirror the draw-time image shift.
+        if (!showRightPanel) {
+            Box(
+                modifier = Modifier
+                    .absoluteOffset(
+                        x = imgW * LEFT_SCREEN_LEFT,
+                        y = imgH * LEFT_SCREEN_TOP
+                    )
+                    .width(imgW * (LEFT_SCREEN_RIGHT - LEFT_SCREEN_LEFT))
+                    .height(imgH * (LEFT_SCREEN_BOTTOM - LEFT_SCREEN_TOP))
+                    .clip(RoundedCornerShape(5.dp))
+            ) { leftContent() }
+        } else {
+            // Subtract screenW to match the draw-time image shift, then add the
+            // right-screen fraction — result is always a positive on-screen x value.
+            Box(
+                modifier = Modifier
+                    .absoluteOffset(
+                        x = -screenW + imgW * RIGHT_SCREEN_LEFT,
+                        y = imgH * RIGHT_SCREEN_TOP
+                    )
+                    .width(imgW * (RIGHT_SCREEN_RIGHT - RIGHT_SCREEN_LEFT))
+                    .height(imgH * (RIGHT_SCREEN_BOTTOM - RIGHT_SCREEN_TOP))
+                    .clip(RoundedCornerShape(5.dp))
+            ) { rightContent() }
+        }
+
+        // ── T9 grid — left panel only ──────────────────────────────────────────────
+        if (!showRightPanel) {
+            repeat(10) { index ->
+                val rowIndex = index / 5
+                val colIndex = index % 5
+                val buttonNumber = index + 1
+                val rowTop = if (rowIndex == 0) T9_ROW1_TOP else T9_ROW2_TOP
+                val rowBottom = if (rowIndex == 0) T9_ROW1_BOTTOM else T9_ROW2_BOTTOM
+                val colLeft = T9_COL_STARTS[colIndex]
+                val colRight = T9_COL_ENDS[colIndex]
+                val isButton10 = buttonNumber == 10
+                val labels = T9_LABELS[index]
+
+                Box(
+                    modifier = Modifier
+                        .absoluteOffset(x = imgW * colLeft, y = imgH * rowTop)
+                        .width(imgW * (colRight - colLeft))
+                        .height(imgH * (rowBottom - rowTop))
+                        .then(
+                            if (isButton10) {
+                                Modifier.pointerInput(Unit) {
+                                    awaitEachGesture {
+                                        awaitFirstDown().also { it.consume() }
+                                        onT9Button10Press()
+                                        waitForUpOrCancellation()
+                                        onT9Button10Release()
+                                    }
+                                }
+                            } else {
+                                Modifier.clickable { onT9Key(buttonNumber) }
+                            }
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Text(
+                            text = labels[0],
+                            fontFamily = SixtyFourFont,
+                            fontSize = 12.sp,
+                            color = Color.White,
+                            textAlign = TextAlign.Center
+                        )
+                        if (labels.size > 1) {
+                            Text(
+                                text = labels.drop(1).joinToString(" "),
+                                fontFamily = SixtyFourFont,
+                                fontSize = 8.sp,
+                                color = Color.White,
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // ── Virtual controls ───────────────────────────────────────────────────────
+        if (!showRightPanel) {
+            Column(
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(start = 12.dp, bottom = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+                horizontalAlignment = Alignment.Start
+            ) {
+                Box(
+                    modifier = Modifier
+                        .background(Color(0xDD000000), RoundedCornerShape(16.dp))
+                        .clickable { onTogglePanel() }
+                        .padding(horizontal = 14.dp, vertical = 6.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "INFO  ▶",
+                        fontFamily = SixtyFourFont,
+                        fontSize = 9.sp,
+                        color = TerminalGreen
+                    )
+                }
+
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf(
+                        "▲" to onNavUp,
+                        "▼" to onNavDown,
+                        "ENT" to onCircleRight,
+                        "BCK" to onCircleLeft
+                    ).forEach { (label, action) ->
+                        Box(
+                            modifier = Modifier
+                                .background(Color(0xDD000000), RoundedCornerShape(12.dp))
+                                .clickable { action() }
+                                .padding(horizontal = 10.dp, vertical = 6.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = label,
+                                fontFamily = SixtyFourFont,
+                                fontSize = 9.sp,
+                                color = TerminalGreen
+                            )
+                        }
+                    }
+                }
+            }
+        } else {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 16.dp)
+                    .background(Color(0xDD000000), RoundedCornerShape(16.dp))
+                    .clickable { onTogglePanel() }
+                    .padding(horizontal = 14.dp, vertical = 6.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "◀  DEX",
+                    fontFamily = SixtyFourFont,
+                    fontSize = 9.sp,
+                    color = TerminalGreen
+                )
             }
         }
     }
